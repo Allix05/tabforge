@@ -1,0 +1,5 @@
+.work/
+.claude/
+node_modules/
+__pycache__/
+helper/.separation-asked

@@ -1,0 +1,1 @@
+{"name":"tabforge","version":"1.0.0","private":true,"type":"module","description":"Turn any song into playable guitar tabs, 100% client-side.","scripts":{"test":"node --test","serve":"python helper/tabforge_helper.py"}}

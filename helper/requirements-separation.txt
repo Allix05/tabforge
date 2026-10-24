@@ -1,0 +1,16 @@
+# Optional: AI stem separation (Demucs htdemucs_6s). Large download (~1-2 GB with PyTorch).
+# demucs is installed without its torchaudio pin: the helper does audio I/O with ffmpeg instead.
+-r requirements.txt
+torch>=2.1
+einops
+julius
+lameenc
+openunmix
+pyyaml
+tqdm
+dora-search
+omegaconf
+retrying
+submitit
+treetable
+cloudpickle

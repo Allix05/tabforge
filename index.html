@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TabForge</title>
+<meta name="description" content="Turn any song into playable 6-string guitar tabs: guitar parts, vocal melodies, lead lines from any instrument, or a full fingerstyle arrangement. Free, runs in your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f2a93b'/%3E%3Cg stroke='%2316120d' stroke-width='1.6'%3E%3Cpath d='M6 9h20M6 13h20M6 17h20M6 21h20'/%3E%3C/g%3E%3Ccircle cx='12' cy='13' r='3' fill='%2316120d'/%3E%3Ccircle cx='20' cy='21' r='3' fill='%2316120d'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=JetBrains+Mono:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <div class="logo-strings" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <h1>TabForge <span class="accent">any song → guitar tabs</span></h1>
+    <p class="subtitle">Drop a song, paste a YouTube or Spotify link, and get playable <strong>6-string tabs</strong> with a synced player. Tab the guitar part, or turn the <strong>vocal melody</strong>, a <strong>piano / synth / sax lead</strong>, or the whole song into something that sounds good on guitar. Free, and the AI runs right in your browser.</p>
+  </header>
+
+  <main>
+    <!-- 1. Source -->
+    <section class="card" id="sourceCard">
+      <h2><span class="num">1</span> Choose a song</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" data-pane="file" role="tab">Audio file</button>
+        <button class="tab-btn" data-pane="link" role="tab">YouTube / Spotify link</button>
+        <button class="tab-btn" data-pane="record" role="tab">Record</button>
+        <button class="tab-btn" data-pane="demo" role="tab">Demo</button>
+      </div>
+
+      <div class="pane" data-pane="file">
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.opus,.webm,.mp4">
+          <div class="dz-icon" aria-hidden="true">♪</div>
+          <div><strong>Drop an audio file here</strong> or click to browse</div>
+          <div class="muted">MP3, WAV, M4A, FLAC, OGG, MP4… processed on your device</div>
+        </label>
+      </div>
+
+      <div class="pane hidden" data-pane="link">
+        <div class="link-row">
+          <input type="url" id="linkInput" placeholder="https://www.youtube.com/watch?v=…  or  https://open.spotify.com/track/…" autocomplete="off">
+        </div>
+        <p class="muted small">Works with YouTube, YouTube Music, SoundCloud, Bandcamp, Spotify, Apple Music and Deezer. Streaming links are matched to the same song on YouTube, because Spotify never gives out its audio.</p>
+        <div class="helper-box" id="helperBox"></div>
+      </div>
+
+      <div class="pane hidden" data-pane="record">
+        <div class="record-row">
+          <button class="btn" id="recordBtn">● Start recording</button>
+          <span id="recordTime" class="mono">0:00</span>
+        </div>
+        <p class="muted small">Play or hum something into your microphone. Nothing is uploaded.</p>
+      </div>
+
+      <div class="pane hidden" data-pane="demo">
+        <p>An original 8-bar piece (Am – F – C – G, 100 BPM): four bars of fingerpicked arpeggios, then a melody over a bass line. It's a good way to see how TabForge works, and the ground truth is known.</p>
+        <button class="btn" id="demoBtn">Load the demo</button>
+      </div>
+
+      <div class="source-status hidden" id="sourceStatus"></div>
+    </section>
+
+    <!-- 2. Mode -->
+    <section class="card">
+      <h2><span class="num">2</span> What should become the tab?</h2>
+      <div class="modes" id="modes">
+        <label class="mode">
+          <input type="radio" name="mode" value="guitar" checked>
+          <span class="mode-icon" aria-hidden="true">🎸</span>
+          <span class="mode-title">Guitar part</span>
+          <span class="mode-desc">Transcribes the electric or acoustic guitar that's already in the song: riffs, chords, solos.</span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="vocals">
+          <span class="mode-icon" aria-hidden="true">🎤</span>
+          <span class="mode-title">Vocal melody</span>
+          <span class="mode-desc">Follows the singer, so you can play the melody of the lyrics on guitar.</span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="lead">
+          <span class="mode-icon" aria-hidden="true">🎹</span>
+          <span class="mode-title">Lead melody</span>
+          <span class="mode-desc">The main line from any instrument (piano, keys, synth, sax, violin…), moved to a comfortable guitar range.</span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="arrange">
+          <span class="mode-icon" aria-hidden="true">✨</span>
+          <span class="mode-title">Fingerstyle arrangement</span>
+          <span class="mode-desc">Melody on top plus bass notes from the detected chords: the whole song on one guitar.</span>
+        </label>
+      </div>
+
+      <details class="options" open>
+        <summary>Options</summary>
+        <div class="opt-grid">
+          <label>Tuning
+            <select id="tuning"></select>
+          </label>
+          <label>Capo
+            <select id="capo"></select>
+          </label>
+          <label>Transpose <span class="val" id="transposeVal">0</span>
+            <input type="range" id="transpose" min="-7" max="7" step="1" value="0">
+          </label>
+          <label>Sensitivity <span class="val" id="sensVal">50%</span>
+            <input type="range" id="sensitivity" min="0" max="1" step="0.05" value="0.5">
+          </label>
+          <label>Source track
+            <select id="stem">
+              <option value="auto">Auto (best for the mode)</option>
+              <option value="mix">Full mix</option>
+              <option value="guitar">Guitar stem</option>
+              <option value="vocals">Vocals stem</option>
+              <option value="piano">Piano stem</option>
+              <option value="other">Other (synth, strings…)</option>
+              <option value="instruments">All melodic instruments</option>
+              <option value="bass">Bass stem</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="separate" checked> AI stem separation <span class="muted">(local helper)</span></label>
+          <label class="check"><input type="checkbox" id="overtones" checked> Remove ghost overtones</label>
+        </div>
+      </details>
+
+      <div class="generate-row">
+        <button class="btn primary big" id="generateBtn" disabled>Generate tabs</button>
+        <div class="progress hidden" id="progress">
+          <div class="bar"><div class="fill" id="progressFill"></div></div>
+          <div class="progress-text" id="progressText"></div>
+        </div>
+      </div>
+      <div class="error hidden" id="errorBox"></div>
+    </section>
+
+    <!-- 3. Result -->
+    <section class="card result hidden" id="result">
+      <div class="song-head">
+        <div>
+          <h2 id="songTitle">Untitled</h2>
+          <div class="chips" id="chips"></div>
+        </div>
+        <div class="tempo-edit">
+          <label>BPM <input type="number" id="bpmInput" min="30" max="260" step="0.1"></label>
+          <button class="btn small" id="halfBtn" title="Half tempo">½×</button>
+          <button class="btn small" id="doubleBtn" title="Double tempo">2×</button>
+          <button class="btn small ghost" id="autoBpmBtn" title="Detect tempo again">auto</button>
+        </div>
+      </div>
+
+      <div class="tab-scroll" id="tabScroll"><div id="tabView"></div></div>
+      <div class="fretboard" id="fretboard"></div>
+
+      <div class="exports">
+        <button class="btn small" id="copyAscii">Copy tab as text</button>
+        <button class="btn small" id="dlAscii">Download .txt</button>
+        <button class="btn small" id="dlMidi">Download MIDI (Guitar Pro / MuseScore)</button>
+      </div>
+      <p class="muted small" id="resultNote"></p>
+    </section>
+
+    <section class="card how">
+      <h2>How it works &amp; how accurate it is</h2>
+      <ol>
+        <li><strong>Stem separation (optional, local helper):</strong> <a href="https://github.com/facebookresearch/demucs">Demucs</a> <code>htdemucs_6s</code> splits the song into vocals, guitar, piano, bass, drums and other, so the guitar mode hears only guitar and the melody modes hear only the singer or the lead.</li>
+        <li><strong>Note transcription:</strong> Spotify's <a href="https://github.com/spotify/basic-pitch">Basic Pitch</a> neural network detects every note (pitch, onset, length), running in your browser on TensorFlow.js.</li>
+        <li><strong>Music analysis:</strong> ghost overtones removed, beats tracked with dynamic programming (drifting tempos are followed too), downbeats found, notes snapped to a 16th-note grid, key and chords detected.</li>
+        <li><strong>Melody modes:</strong> a Viterbi search picks the most prominent line frame by frame, preferring loud and high notes and smooth motion, then moves it by octaves into the sweet spot of the guitar.</li>
+        <li><strong>Fingering:</strong> every chord gets its playable shapes (one note per string, at most a 4-fret stretch), and a second Viterbi pass chooses the sequence with the least hand movement, like a guitarist would.</li>
+      </ol>
+      <p class="muted">Automatic transcription is very good on clear recordings and solo instruments, and less reliable on dense, distorted full mixes. Turn on stem separation for the best results. Use <em>Sensitivity</em> to trade missed notes against extra ones, and fix the tempo with ½× / 2× if the bars look stretched. Always check by ear with the player: the tab sound and the original stay in sync.</p>
+    </section>
+  </main>
+
+  <footer>
+    TabForge &middot; by <a href="https://github.com/Allix05">Allix05</a> &middot; <a href="https://github.com/Allix05/tabforge">source</a> &middot; Basic Pitch model &copy; Spotify AB (Apache-2.0)
+  </footer>
+</div>
+
+<!-- sticky player -->
+<div class="player hidden" id="player">
+  <button class="play-btn" id="playBtn" aria-label="Play">▶</button>
+  <button class="icon-btn" id="stopBtn" aria-label="Back to start">⏮</button>
+  <span class="mono time" id="timeLabel">0:00 / 0:00</span>
+  <label class="pl-item">Speed
+    <select id="speed">
+      <option value="0.5">50%</option><option value="0.6">60%</option><option value="0.75">75%</option>
+      <option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.25">125%</option>
+    </select>
+  </label>
+  <label class="pl-item mix">Original <input type="range" id="mix" min="0" max="1" step="0.05" value="0.5"> Tab</label>
+  <label class="pl-item">Tone
+    <select id="tone"><option value="clean">Clean electric</option><option value="drive">Overdrive</option><option value="acoustic">Acoustic</option></select>
+  </label>
+  <button class="toggle" id="metroBtn" aria-pressed="false">Metronome</button>
+  <span class="loop-group">
+    <button class="toggle" id="loopA">A</button><button class="toggle" id="loopB">B</button><button class="icon-btn" id="loopClear" aria-label="Clear loop">✕</button>
+  </span>
+  <button class="toggle on" id="followBtn" aria-pressed="true">Follow</button>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
