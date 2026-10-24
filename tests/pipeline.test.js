@@ -47,6 +47,15 @@ test('ringing-note echoes and masked ghosts are dropped', () => {
   assert.deepEqual(out.map((n) => `${n.midi}@${n.start}`), ['45@0', '52@0.3', '45@1']);
 });
 
+test('a strummed chord shares one tab column, fast runs stay apart', () => {
+  const beats = Array.from({ length: 20 }, (_, i) => i * 0.3); // 200 BPM
+  const chord = [50, 57, 62].map((m, i) => ({ start: 1.2 + i * 0.02, dur: 0.3, midi: m, vel: 0.8 }));
+  const steps = new Set(quantize(chord, beats, { strum: 0.05 }).map((n) => n.step));
+  assert.equal(steps.size, 1);
+  const run = [64, 65, 67, 69].map((m, i) => ({ start: 2.4 + i * 0.075, dur: 0.07, midi: m, vel: 0.8 }));
+  assert.equal(new Set(quantize(run, beats, { strum: 0.05 }).map((n) => n.step)).size, 4);
+});
+
 test('melody extraction follows the top voice and skips accompaniment', () => {
   const notes = [];
   for (let i = 0; i < 8; i++) {
@@ -118,6 +127,14 @@ test('impossible chords drop the weakest non-melody note', () => {
   const { notes, dropped } = assignFrets(col, { strings: std });
   assert.ok(dropped > 0);
   assert.ok(notes.some((n) => n.midi === 64));
+});
+
+test('an impossible unison does not hang the fret assignment', () => {
+  // E2 exists only on the low E string, so two of them can't share a column
+  const col = [40, 40].map((m) => ({ step: 0, start: 0, dur: 1, midi: m, vel: 0.8 }));
+  const { notes, dropped } = assignFrets(col, { strings: std });
+  assert.equal(notes.length, 1);
+  assert.equal(dropped, 1);
 });
 
 test('fitRange moves a vocal line into guitar range', () => {

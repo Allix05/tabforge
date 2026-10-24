@@ -29,7 +29,7 @@ const spell = (name, semis, flats) => {
 
 export function buildTab({
   mainNotes, accompNotes = null, duration, mode = 'guitar', tuning = 'standard', capo = 0,
-  transpose = 0, cleanOvertones = true, bpm: bpmOverride = 0, sensitivity = 0.5, isolated = false,
+  transpose = 0, cleanOvertones = true, extraCleanup = false, bpm: bpmOverride = 0, sensitivity = 0.5, isolated = false,
 }) {
   const strings = TUNINGS[tuning].strings;
   const [lo, hi] = playableRange(strings, capo);
@@ -44,10 +44,14 @@ export function buildTab({
 
   let quantized;
   if (mode === 'guitar') {
-    let notes = dropContinuations(cleanNotes(mainNotes, { minDur: 0.05 })).map((n) => ({ ...n, midi: n.midi + transpose }));
+    // Measured on GuitarSet with the guitar model (training/eval_js.mjs cleanup):
+    // only the range filter helps. Echo removal cost ~5 F1 points because it
+    // also eats real repeated notes (palm-muted chugs), so it is opt-in.
+    let notes = cleanNotes(mainNotes, { minDur: 0.05 }).map((n) => ({ ...n, midi: n.midi + transpose }));
     notes = cleanNotes(notes, { minMidi: lo, maxMidi: hi });
-    if (cleanOvertones) notes = dropMasked(removeOvertones(notes, 0.5), 0.7 - 0.3 * sensitivity);
-    quantized = quantize(notes, beats);
+    if (extraCleanup) notes = dropMasked(removeOvertones(dropContinuations(notes), 0.5), 0.7 - 0.3 * sensitivity);
+    // a strummed chord's notes land within ~50 ms: keep them in one column
+    quantized = quantize(notes, beats, { strum: 0.05 });
   } else {
     const vocal = mode === 'vocals' || mode === 'arrange';
     // ghosts above the line would pull the melody tracker upwards, so clean first

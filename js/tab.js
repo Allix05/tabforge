@@ -32,16 +32,30 @@ export function positionsFor(midi, strings, capo = 0, maxFret = 22) {
 const MAX_SPAN = 4;
 const MAX_CANDIDATES = 24;
 
-function staticCost(fingering) {
+// Cost weights, fitted on GuitarSet's string/fret annotations
+// (training/eval_js.mjs fingering): on the held-out player TabForge picks the
+// same string as the guitarist for 69.9% of notes (57.7% with hand-set weights).
+export const DEFAULT_WEIGHTS = {
+  fretMean: 0, span: 0.374, high: 1.053, count: 0, open: 0.174, move: 0.254, string: 0, ease: 0.463, stringIdx: 0,
+  timbre: 0.5,
+};
+
+function staticCost(fingering, w = DEFAULT_WEIGHTS) {
   const fretted = fingering.filter((p) => p.fret > 0).map((p) => p.fret);
-  if (!fretted.length) return 0;
+  const opens = fingering.length - fretted.length;
+  let strings = w.stringIdx * fingering.reduce((a, p) => a + p.string, 0) / fingering.length;
+  // what the string head heard: -log P(string | note's timbre)
+  for (const p of fingering) {
+    if (p.note?.stringProbs) strings -= w.timbre * Math.log(Math.max(p.note.stringProbs[p.string], 1e-3));
+  }
+  if (!fretted.length) return opens * w.open + strings;
   const lo = Math.min(...fretted), hi = Math.max(...fretted);
   const mean = fretted.reduce((a, b) => a + b, 0) / fretted.length;
-  return mean * 0.04 + (hi - lo) * 0.35 + Math.max(0, hi - 12) * 0.12 + fretted.length * 0.03;
+  return mean * w.fretMean + (hi - lo) * w.span + Math.max(0, hi - 12) * w.high + fretted.length * w.count + opens * w.open + strings;
 }
 
 // all assignments of the column's notes to distinct strings within a hand span
-export function candidatesFor(column, strings, capo, maxFret) {
+export function candidatesFor(column, strings, capo, maxFret, w = DEFAULT_WEIGHTS) {
   const notes = [...column].sort((a, b) => b.midi - a.midi);
   const options = notes.map((n) => positionsFor(n.midi, strings, capo, maxFret));
   const found = [];
@@ -52,7 +66,7 @@ export function candidatesFor(column, strings, capo, maxFret) {
     if (budget-- <= 0) return;
     if (i === notes.length) {
       const f = chosen.map((p, k) => ({ ...p, note: notes[k] }));
-      found.push({ fingering: f, cost: staticCost(f) });
+      found.push({ fingering: f, cost: staticCost(f, w) });
       return;
     }
     for (const p of options[i]) {
@@ -74,7 +88,8 @@ const handPos = (fingering) => {
 };
 const meanString = (fingering) => fingering.reduce((a, p) => a + p.string, 0) / fingering.length;
 
-export function assignFrets(notes, { strings = TUNINGS.standard.strings, capo = 0, maxFret = 22 } = {}) {
+export function assignFrets(notes, { strings = TUNINGS.standard.strings, capo = 0, maxFret = 22, weights = DEFAULT_WEIGHTS } = {}) {
+  const w = { ...DEFAULT_WEIGHTS, ...weights };
   const [lo, hi] = playableRange(strings, capo, maxFret);
   const columns = new Map();
   for (const n of notes) {
@@ -89,14 +104,16 @@ export function assignFrets(notes, { strings = TUNINGS.standard.strings, capo = 
     // strongest six at most; melody (top) notes are protected, bass/soft notes go first
     let col = columns.get(step).sort((a, b) => b.vel - a.vel).slice(0, strings.length);
     dropped += columns.get(step).length - col.length;
-    let cands = candidatesFor(col, strings, capo, maxFret);
+    let cands = candidatesFor(col, strings, capo, maxFret, w);
     while (!cands.length && col.length > 1) {
       const top = Math.max(...col.map((n) => n.midi));
-      const removable = col.filter((n) => n.midi !== top);
-      const weakest = removable.reduce((w, n) => (n.vel < w.vel ? n : w), removable[0]);
+      // protect the melody note; if every note is that pitch (unison), any copy can go
+      let removable = col.filter((n) => n.midi !== top);
+      if (!removable.length) removable = col.slice(1);
+      const weakest = removable.reduce((a, n) => (n.vel < a.vel ? n : a), removable[0]);
       col = col.filter((n) => n !== weakest);
       dropped++;
-      cands = candidatesFor(col, strings, capo, maxFret);
+      cands = candidatesFor(col, strings, capo, maxFret, w);
     }
     return { step, time: col[0].start, cands };
   }).filter((l) => l.cands.length);
@@ -108,13 +125,13 @@ export function assignFrets(notes, { strings = TUNINGS.standard.strings, capo = 
     const states = layer.cands.map((c) => ({ c, pos: handPos(c.fingering), score: c.cost, from: -1 }));
     if (prev) {
       const gap = layer.time - prev.time;
-      const ease = gap > 0.6 ? 0.4 : 1;
+      const ease = gap > 0.6 ? w.ease : 1;
       for (const st of states) {
         let best = Infinity, arg = 0, bestPos = st.pos;
         prev.states.forEach((ps, k) => {
           const pos = st.pos ?? ps.pos;
           const move = pos != null && ps.pos != null ? Math.abs(pos - ps.pos) : 0;
-          const v = ps.score + ease * (move * 0.3 + Math.abs(meanString(st.c.fingering) - meanString(ps.c.fingering)) * 0.05);
+          const v = ps.score + ease * (move * w.move + Math.abs(meanString(st.c.fingering) - meanString(ps.c.fingering)) * w.string);
           if (v < best) { best = v; arg = k; bestPos = pos; }
         });
         st.score += best; st.from = arg; st.pos = bestPos;

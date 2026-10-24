@@ -61,9 +61,11 @@ python helper/tabforge_helper.py
                 vocals · guitar · piano · bass · drums · other
                                           │
                                           ▼
-          Basic Pitch (Spotify, TF.js in the browser): notes + onsets
+   guitar mode: TabForge guitar model (Basic Pitch fine-tuned on real tabs
+                + high-gain / metal augmentation, + a string head), ONNX
+   melody modes: stock Basic Pitch (TF.js), better on voice & keys
                                           │
-     cleanup: overtone ghosts, ringing-note echoes, masked bleed
+     automatic sensitivity: per-song thresholds from activation levels
                                           │
      beat tracking (Ellis DP) ▶ downbeats ▶ 16th-note grid ▶ key + chords
                                           │
@@ -74,25 +76,64 @@ python helper/tabforge_helper.py
     └────────────────┬────────────────┴───────────────────────────────┘
                      ▼
    fingering: per-chord playable shapes (one note per string, ≤4-fret span)
-   + Viterbi over the song minimising hand movement and stretch
+   + Viterbi over the song; costs fitted on real tabs, plus what the
+     string head heard (-log P(string | timbre))
                      ▼
             SVG tab · fretboard · synced Web Audio player · ASCII / MIDI
 ```
 
 | File | Role |
 |---|---|
-| `js/transcribe.js` | Basic Pitch inference (TensorFlow.js), 22.05 kHz mono resampling |
-| `js/notes.js` | Cleanup, melody extraction, tempo/beat tracking, key & chords, quantization, arranging |
+| `js/transcribe.js` | Model selection, 22.05 kHz mono resampling, note decoding |
+| `js/guitar-model.js` | The fine-tuned guitar model + string head on onnxruntime-web |
+| `js/decode.js` | Basic Pitch's note decoder, rewritten to run in linear time (identical output) |
+| `js/sensitivity.js` | Automatic per-song thresholds |
+| `js/notes.js` | Melody extraction, tempo/beat tracking, key & chords, quantization, arranging |
 | `js/tab.js` | Tunings and the string/fret assignment (candidate shapes + Viterbi) |
 | `js/pipeline.js` | Glues the steps together for each mode |
 | `js/render.js` | SVG tab notation, rhythm stems, cursor, fretboard |
 | `js/synth.js`, `js/ks.js` | Karplus-Strong guitar synth (allpass-tuned), synced player |
 | `js/export.js` | ASCII tab and Standard MIDI File writers |
 | `helper/tabforge_helper.py` | Local server: static app, yt-dlp downloads, streaming-link lookup, Demucs |
+| `training/` | Fine-tuning, synthetic riff generator, evaluation and ONNX export (Python / PyTorch) |
 
-### Accuracy
+## Training on real tabs
 
-Measured on the built-in demo (synthesized guitar, known ground truth, full mix, no separation): **guitar mode recovers 96 % of the notes at 82 % precision**, with tempo within 0.5 BPM and the chord progression (Am–F–C–G) exact. Real recordings vary: a clean guitar or a separated stem gives tabs close to hand-made ones, while dense, heavily distorted full mixes give more missed or extra notes. Turn on stem separation, adjust *Sensitivity*, and check by ear with the synced player.
+The guitar model is [Basic Pitch](https://github.com/spotify/basic-pitch) fine-tuned (via the [PyTorch port](https://github.com/gudgud96/basic-pitch-torch)) on **[GuitarSet](https://guitarset.weebly.com/)**: 360 real performances by 6 guitarists, every note annotated with its string and fret. Players 00–03 train, player 04 picks checkpoints and calibrates, and **player 05 is never seen**: all numbers below come from player 05.
+
+Basic Pitch had never heard a high-gain amp, a palm mute or a 200 BPM riff, so training also uses:
+
+- **Amp / mix augmentation**: tube-style high-gain amps and cabinets (including heavy low cuts, so a palm-muted low E is still read as E2 when its fundamental is gone), double-tracked guitars, synthetic drums and bass bleed, reverb, noise, pitch shifts.
+- **Synthetic metal riffs**: 3,000 procedurally generated riffs with exact tab labels (palm-muted chugs, power chords, gallops, pedal-tone riffs, chromatic runs, tremolo leads, 80–230 BPM), rendered with a string model (darker wound strings, palm damping, pick attack) and pushed through the amps.
+- **Real palm mutes**: real GuitarSet takes damped after every attack, as a palm on the bridge would.
+
+A small **string head** on top of the model learns *which string* plays each note from timbre (GuitarSet's hexaphonic labels), and the fret search combines it with playability costs that were themselves fitted to the real tabs.
+
+**Note accuracy** (onset F1: right pitch within 50 ms; automatic sensitivity; held-out player):
+
+| Condition | Stock Basic Pitch | TabForge guitar model |
+|---|---|---|
+| Clean acoustic | **0.862** | 0.835 |
+| High-gain amp | 0.670 | **0.713** |
+| Separated guitar stem (with bleed) | 0.735 | **0.832** |
+| Full metal mix (2 guitars, drums, bass) | 0.369 | **0.665** |
+| Metal riffs: chugs, palm mutes, fast picking (synthetic, held out) | 0.614 | **0.798** |
+
+Stock Basic Pitch was trained on GuitarSet itself, so its clean-acoustic score is probably flattered; everywhere distortion is involved the fine-tuned model is far ahead.
+
+**Tab accuracy**: right note, right time *and* the same string as the guitarist played (a harder bar: many notes can sensibly be played in two or three places). Both columns use the fret search fitted to real tabs; the right one adds the guitar model and its string head:
+
+| Condition | Stock Basic Pitch | TabForge |
+|---|---|---|
+| Clean acoustic | 0.555 | **0.627** |
+| High-gain amp | 0.326 | **0.395** |
+| Separated guitar stem | 0.438 | **0.528** |
+| Full metal mix | 0.178 | **0.343** |
+| Metal riffs (synthetic, held out) | 0.380 | **0.573** |
+
+On the real notes alone, the fitted fret search picks the guitarist's string 69.9% of the time (57.7% with the original hand-set costs).
+
+**What it means in practice**: on clean playing or a separated guitar stem, most notes are right and most land where a guitarist would play them; on a dense, distorted full mix, many notes are still missed or wrong. Use the local helper's stem separation, set the right tuning, and check by ear with the synced player: no automatic transcriber (this one included) is perfect yet.
 
 ## Tests
 
@@ -100,11 +141,25 @@ Measured on the built-in demo (synthesized guitar, known ground truth, full mix,
 node --test
 ```
 
-The unit tests cover the beat tracker, melody extraction, chord detection, fret assignment (playability and the hand-span limits), the four modes on the demo, the ASCII/MIDI writers and synth tuning.
+The unit tests cover the beat tracker, melody extraction, chord detection, fret assignment (playability and the hand-span limits), the fast note decoder, automatic sensitivity, the four modes on the demo, the ASCII/MIDI writers and synth tuning.
+
+To retrain the guitar model (needs an NVIDIA GPU; data stays outside the repo):
+
+```bash
+python training/prepare_guitarset.py      # GuitarSet zips -> cache
+python training/synth_riffs.py --n 3000   # synthetic metal riffs
+python training/train.py --help           # staged runs are listed in its docstring
+python training/string_head.py
+python training/evaluate.py --run guitar6 --name guitar6
+python training/export_onnx.py            # -> model-guitar/tabforge-guitar.onnx
+node training/eval_js.mjs fingering       # fit fret costs to the real tabs
+```
 
 ## Credits
 
-- Note transcription: [Basic Pitch](https://github.com/spotify/basic-pitch) by Spotify, Apache-2.0 (the model in `model/` keeps its license).
+- Note transcription: [Basic Pitch](https://github.com/spotify/basic-pitch) by Spotify, Apache-2.0. `model/` is the original; `model-guitar/` is TabForge's fine-tuned derivative (Apache-2.0 terms apply to it).
+- Training data: [GuitarSet](https://zenodo.org/records/3371780) (Xi et al., ISMIR 2018), CC BY 4.0.
+- PyTorch port used for training: [basic-pitch-torch](https://github.com/gudgud96/basic-pitch-torch).
 - Stem separation: [Demucs](https://github.com/facebookresearch/demucs) by Meta AI, MIT.
 - Downloads: [yt-dlp](https://github.com/yt-dlp/yt-dlp), Unlicense.
 

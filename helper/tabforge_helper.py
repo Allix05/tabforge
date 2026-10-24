@@ -129,7 +129,9 @@ def download(job, url):
     import yt_dlp
 
     target = url
-    if any(h in url for h in STREAMING_HOSTS):
+    if url.startswith("ytsearch"):
+        job_update(job, message="Searching YouTube…")
+    elif any(h in url for h in STREAMING_HOSTS):
         job_update(job, message="Reading track info from the streaming link…")
         query = resolve_streaming(url)
         job_update(job, message=f"Finding “{query}” on YouTube…", title=query)
@@ -355,8 +357,10 @@ class Handler(SimpleHTTPRequestHandler):
         ctype = self.headers.get("Content-Type", "")
         if ctype.startswith("application/json"):
             url = json.loads(self.rfile.read(length) or b"{}").get("url", "").strip()
+            if not url:
+                return self.send_json({"error": "Paste a link or type an artist and song title."}, 400)
             if not re.match(r"https?://", url):
-                return self.send_json({"error": "Please paste a full http(s) link."}, 400)
+                url = "ytsearch1:" + url[:200] + " official audio"  # plain text: search YouTube
             # same link again (e.g. after switching modes): reuse the finished work
             with jobs_lock:
                 for old in jobs.values():

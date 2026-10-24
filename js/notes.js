@@ -16,6 +16,7 @@ export function fromBasicPitch(events) {
       dur: e.durationSeconds,
       midi: e.pitchMidi,
       vel: e.amplitude,
+      ...(e.stringProbs ? { stringProbs: e.stringProbs } : {}),
     }))
     .sort((a, b) => a.start - b.start || a.midi - b.midi);
 }
@@ -281,10 +282,29 @@ export function beatToTime(beats, b) {
   return beats[i] + (b - i) * (beats[i + 1] - beats[i]);
 }
 
+// A strummed or picked chord spreads its notes over a few tens of ms; tabs
+// write them in one column. Returns the chord-onset time for each note.
+export function strumOnsets(notes, window = 0.05) {
+  const order = notes.map((n, i) => i).sort((a, b) => notes[a].start - notes[b].start);
+  const at = new Array(notes.length);
+  let head = null, pitches = new Set();
+  for (const i of order) {
+    const n = notes[i];
+    if (head === null || n.start - head > window || pitches.has(n.midi) || pitches.size >= 6) {
+      head = n.start;
+      pitches = new Set();
+    }
+    pitches.add(n.midi);
+    at[i] = head;
+  }
+  return at;
+}
+
 // Snap to a 16th-note grid (4 steps per beat). Real times are kept for playback.
-export function quantize(notes, beats, { stepsPerBeat = 4, mono = false } = {}) {
-  let out = notes.map((n) => {
-    const step = Math.max(0, Math.round(timeToBeat(beats, n.start) * stepsPerBeat));
+export function quantize(notes, beats, { stepsPerBeat = 4, mono = false, strum = 0 } = {}) {
+  const onsets = strum > 0 ? strumOnsets(notes, strum) : notes.map((n) => n.start);
+  let out = notes.map((n, i) => {
+    const step = Math.max(0, Math.round(timeToBeat(beats, onsets[i]) * stepsPerBeat));
     const stop = Math.round(timeToBeat(beats, end(n)) * stepsPerBeat);
     return { ...n, step, durSteps: Math.max(1, stop - step) };
   });

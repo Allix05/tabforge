@@ -1,0 +1,6 @@
+tabforge-guitar.onnx is a modified version of Spotify's Basic Pitch model
+(Copyright 2022 Spotify AB, Apache License 2.0, see LICENSE-basic-pitch).
+
+Changes made by TabForge: the network weights were fine-tuned on GuitarSet
+(CC BY 4.0) with amp, mix and palm-mute augmentation and synthetic riffs, and a
+string-classification head was added. See training/ in this repository.

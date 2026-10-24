@@ -225,8 +225,12 @@ function stemsForMode(mode) {
   return { main, accomp };
 }
 
+// guitar mode uses the guitar fine-tuned weights, melody modes the general ones
+const modelFor = (m = mode()) => (m === 'guitar' ? 'guitar' : 'general');
+
 async function rawFor(stem, label) {
-  if (state.raw.has(stem)) return state.raw.get(stem);
+  const key = `${stem}|${modelFor()}`;
+  if (state.raw.has(key)) return state.raw.get(key);
   transcriber ??= await import('./transcribe.js');
   let buffer;
   if (stem === 'mix') {
@@ -236,15 +240,18 @@ async function rawFor(stem, label) {
     buffer = await decodeBlob(await fetchStem(state.job.id, stem));
   }
   progress(0, `Listening for notes (${label})…`);
-  const raw = await transcriber.analyze(buffer, (p) => progress(p, `Listening for notes (${label})… ${Math.round(p * 100)}%`));
-  state.raw.set(stem, raw);
+  const raw = await transcriber.analyze(buffer, (p) => progress(p, `Listening for notes (${label})… ${Math.round(p * 100)}%`), { model: modelFor() });
+  state.raw.set(key, raw);
   return raw;
 }
 
+const sensitivity = () => ($('autoSens').checked ? 'auto' : Number($('sensitivity').value));
+
 function notesFor(stem) {
-  const sens = Number($('sensitivity').value);
-  const key = `${stem}|${sens}`;
-  if (!state.decoded.has(key)) state.decoded.set(key, transcriber.decodeNotes(state.raw.get(stem), { sensitivity: sens }));
+  const raw = state.raw.get(`${stem}|${modelFor()}`);
+  const sens = sensitivity();
+  const key = `${stem}|${raw.model}|${sens}`;
+  if (!state.decoded.has(key)) state.decoded.set(key, transcriber.decodeNotes(raw, { sensitivity: sens }));
   return state.decoded.get(key);
 }
 
@@ -292,9 +299,9 @@ function rebuild(fresh = false) {
     tuning: $('tuning').value,
     capo: Number($('capo').value),
     transpose: Number($('transpose').value),
-    cleanOvertones: $('overtones').checked,
+    extraCleanup: $('overtones').checked,
     bpm: state.bpmOverride,
-    sensitivity: Number($('sensitivity').value),
+    sensitivity: sensitivity() === 'auto' ? 0.5 : sensitivity(),
     isolated: main !== 'mix' && main !== 'instruments',
   });
   result.loop = player.loop;
@@ -342,6 +349,12 @@ $('transpose').addEventListener('input', () => { $('transposeVal').textContent =
 $('transpose').addEventListener('change', () => rebuild());
 $('sensitivity').addEventListener('input', () => { $('sensVal').textContent = Math.round($('sensitivity').value * 100) + '%'; });
 $('sensitivity').addEventListener('change', () => rebuild());
+$('autoSens').addEventListener('change', () => {
+  const auto = $('autoSens').checked;
+  $('sensitivity').disabled = auto;
+  $('sensVal').textContent = auto ? 'Auto' : Math.round($('sensitivity').value * 100) + '%';
+  rebuild();
+});
 // options that may need another transcription
 document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { if (state.inputs) generate(); }));
 $('stem').addEventListener('change', () => { if (state.inputs) generate(); });
