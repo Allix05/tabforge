@@ -151,7 +151,8 @@ async function refreshHelper() {
         <li><a href="https://github.com/Allix05/tabforge/archive/refs/heads/main.zip">Download TabForge</a> and unzip it.</li>
         <li>Double-click <code>start-windows.bat</code> (or run <code>./start-mac-linux.sh</code>). It installs what it needs and opens TabForge with links and stem separation enabled.</li>
       </ol>
-      <button class="btn small ghost" id="recheckHelper">I started it, check again</button>`;
+      <button class="btn small ghost" id="recheckHelper">I started it, check again</button>
+      <p class="muted small">Helper running but not detected? Some browsers block websites from talking to your computer. Open <a href="http://127.0.0.1:8765/">http://127.0.0.1:8765</a> instead: it's the same app, served by the helper.</p>`;
     $('recheckHelper').onclick = refreshHelper;
   }
 }
