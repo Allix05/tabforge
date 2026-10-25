@@ -6,7 +6,7 @@ annotation tells us the true string of every note. A small CNN on top of Basic
 Pitch's harmonic CQT learns that; the browser then mixes its probabilities with
 the playability-based fingering search.
 
-  python string_head.py --base guitar6 --steps 8000        # train
+  python string_head.py --base guitar7 --steps 8000        # train
 """
 
 import argparse
@@ -20,7 +20,8 @@ from torch import nn
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 from augment import condition, random_training_condition
-from common import AUDIO_N_SAMPLES, FPS, N_FRAMES, OPEN_STRINGS, SR, device, load_audio, load_model, load_notes, synth_ids
+from common import (AUDIO_N_SAMPLES, FPS, N_FRAMES, OPEN_STRINGS, SR, device, idmt_ids, load_audio, load_model,
+                    load_notes, synth_ids)
 from basic_pitch_torch.model import get_cqt
 from scoring import note_creation
 from train import split_ids, targets
@@ -88,20 +89,24 @@ def string_targets(notes, t0, ratio=1.0, shift=0):
 
 
 class StringWindows(IterableDataset):
-    def __init__(self, ids, synth=(), p_synth=0.3):
+    def __init__(self, ids, synth=(), p_synth=0.25, idmt=(), p_idmt=0.3):
         self.ids = ids
         self.synth = list(synth)
         self.p_synth = p_synth
+        self.idmt = list(idmt)
+        self.p_idmt = p_idmt
 
     def __iter__(self):
         info = get_worker_info()
         rng = np.random.default_rng((info.id if info else 0) + int(time.time()))
         cache = {}
         while True:
-            synthetic = bool(self.synth) and rng.random() < self.p_synth
-            pool = self.synth if synthetic else self.ids
+            r = rng.random()
+            synthetic = bool(self.synth) and r < self.p_synth
+            real_di = bool(self.idmt) and self.p_synth <= r < self.p_synth + self.p_idmt
+            pool = self.synth if synthetic else self.idmt if real_di else self.ids
             t = pool[rng.integers(len(pool))]
-            src = "synth" if synthetic else "pickup" if rng.random() < 0.6 else "mic"
+            src = "synth" if synthetic else "idmt" if real_di else "pickup" if rng.random() < 0.6 else "mic"
             if (t, src) not in cache:
                 if len(cache) > 400:
                     cache.clear()
@@ -111,6 +116,8 @@ class StringWindows(IterableDataset):
             shift = int(rng.integers(-2, 3)) if rng.random() < 0.4 else 0
             ratio = 2 ** (shift / 12)
             need = int(np.ceil(AUDIO_N_SAMPLES * ratio)) + 2
+            if len(x) <= need:
+                continue
             i0 = int(rng.integers(0, len(x) - need))
             seg = np.interp(np.arange(AUDIO_N_SAMPLES) * ratio, np.arange(need), x[i0:i0 + need]).astype(np.float32)
             t0 = i0 / SR
@@ -161,11 +168,14 @@ def run_tab_model(model, audio):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="guitar6", help="note model run to build on")
+    ap.add_argument("--base", default="guitar7", help="note model run to build on")
     ap.add_argument("--steps", type=int, default=8000)
     ap.add_argument("--batch", type=int, default=12)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--workers", type=int, default=4)
+    # IDMT's string labels come largely from positional exercises (every fret of
+    # one string), which skewed the head away from song-like positions: off by default
+    ap.add_argument("--p-idmt", type=float, default=0.0)
     args = ap.parse_args()
     out_dir = Path("C:/tftrain/runs/strings")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -185,7 +195,8 @@ def main():
 
     opt = torch.optim.AdamW(model.head.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.05)
-    loader = DataLoader(StringWindows(train_ids, synth=synth_ids("train")), batch_size=args.batch,
+    loader = DataLoader(StringWindows(train_ids, synth=synth_ids("train"), idmt=idmt_ids("train"), p_idmt=args.p_idmt),
+                        batch_size=args.batch,
                         num_workers=args.workers, persistent_workers=True)
     step, running, t0 = 0, [], time.time()
     for audio, lab in loader:

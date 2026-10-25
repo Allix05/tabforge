@@ -25,7 +25,7 @@ import numpy as np
 from scoring import decode, grid_scores
 
 CONDITIONS = ["clean", "highgain", "metalmix", "stem"]
-REPORT = CONDITIONS + ["synthmetal"]
+REPORT = CONDITIONS + ["synthmetal", "idmt"]
 ONSETS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 FRAMES = [0.15, 0.25, 0.35, 0.45, 0.55, 0.65]
 OLD_DEFAULT = (0.53, 0.35)  # what TabForge used before (sensitivity 0.5)
@@ -38,8 +38,11 @@ def stats(out):
 
 
 def auto_thresholds(st, rule):
-    a, b = rule
-    return float(np.clip(a * st["onset_p95"], 0.2, 0.9)), float(np.clip(b * st["note_p99"], 0.15, 0.65))
+    """rule = (a, b[, onset_floor, frame_floor]); the floors stop sparse
+    recordings (lots of silence, low activation percentiles) from getting
+    thresholds so low that noise turns into notes."""
+    a, b, lo_on, lo_fr = (*rule, 0.2, 0.15)[:4] if len(rule) == 2 else rule
+    return float(np.clip(a * st["onset_p95"], lo_on, 0.9)), float(np.clip(b * st["note_p99"], lo_fr, 0.65))
 
 
 def nearest(o, f):
@@ -65,6 +68,12 @@ def items_for(player, seed):
         notes = load_notes(t)
         kind = "metalmix" if i % 2 else "stem"
         out.append((t, "synthmetal", condition(load_audio(t, "synth"), notes, 0, rng, kind), notes))
+    # IDMT-SMT-Guitar real electric takes (palm mutes, bends, slides) through an amp
+    from common import idmt_ids
+    for i, t in enumerate(idmt_ids("val" if player == VAL_PLAYER else "test")):
+        notes = load_notes(t)
+        kind = "highgain" if i % 2 else "stem"
+        out.append((t, "idmt", condition(load_audio(t, "idmt"), notes, 0, rng, kind), notes))
     return out
 
 
@@ -82,9 +91,12 @@ def fit_rule(rows):
     best, best_f = None, -1
     for a in np.arange(0.3, 1.31, 0.05):
         for b in np.arange(0.3, 1.31, 0.05):
-            fs = [r["grid"][nearest(*auto_thresholds(r["stats"], (a, b)))]["f"] for r in rows]
-            if np.mean(fs) > best_f:
-                best, best_f = (round(float(a), 2), round(float(b), 2)), float(np.mean(fs))
+            for lo_on in (0.2, 0.3, 0.4, 0.5):
+                for lo_fr in (0.15, 0.25, 0.35):
+                    rule = (a, b, lo_on, lo_fr)
+                    f = np.mean([r["grid"][nearest(*auto_thresholds(r["stats"], rule))]["f"] for r in rows])
+                    if f > best_f:
+                        best, best_f = tuple(round(float(v), 2) for v in rule), float(f)
     return best, best_f
 
 
@@ -139,6 +151,10 @@ def main():
     for kind, r in res.items():
         print(f"  {kind:9s} old {r['old_default']['f']:.3f} | fixed {r['best_fixed']['f']:.3f} | auto {r['auto']['f']:.3f}"
               f"  (auto P {r['auto']['p']:.3f} R {r['auto']['r']:.3f})")
+    # how much does the onset floor matter? (dense songs vs sparse isolated notes)
+    for lo_on in (0.2, 0.3, 0.4, 0.5):
+        alt, _ = report(test_rows, (rule[0], rule[1], lo_on, rule[3]))
+        print(f"  onset floor {lo_on}: " + "  ".join(f"{k} {alt[k]['auto']['f']:.3f}" for k in ("metalmix", "idmt", "all")))
     json.dump({"rule": rule, "fixed": fixed, "test": res}, open(out / f"{args.name}.json", "w"), indent=1)
     dump_notes(test_rows, rule, out / f"{args.name}_notes.json")
 

@@ -105,7 +105,7 @@ Basic Pitch had never heard a high-gain amp, a palm mute or a 200 BPM riff, so t
 
 - **Amp / mix augmentation**: tube-style high-gain amps and cabinets (including heavy low cuts, so a palm-muted low E is still read as E2 when its fundamental is gone), double-tracked guitars, synthetic drums and bass bleed, reverb, noise, pitch shifts.
 - **Synthetic metal riffs**: 3,000 procedurally generated riffs with exact tab labels (palm-muted chugs, power chords, gallops, pedal-tone riffs, chromatic runs, tremolo leads, 80–230 BPM), rendered with a string model (darker wound strings, palm damping, pick attack) and pushed through the amps.
-- **Real palm mutes**: real GuitarSet takes damped after every attack, as a palm on the bridge would.
+- **Real palm mutes**: real GuitarSet takes damped after every attack, as a palm on the bridge would, plus **[IDMT-SMT-Guitar](https://zenodo.org/records/7544110)**: real electric guitars recorded direct, 4,776 annotated notes including 1,197 genuine palm mutes, bends, slides and vibrato (10% of it held out for validation and 10% for test).
 
 A small **string head** on top of the model learns *which string* plays each note from timbre (GuitarSet's hexaphonic labels), and the fret search combines it with playability costs that were themselves fitted to the real tabs.
 
@@ -113,25 +113,27 @@ A small **string head** on top of the model learns *which string* plays each not
 
 | Condition | Stock Basic Pitch | TabForge guitar model |
 |---|---|---|
-| Clean acoustic | **0.862** | 0.835 |
-| High-gain amp | 0.670 | **0.713** |
-| Separated guitar stem (with bleed) | 0.735 | **0.832** |
-| Full metal mix (2 guitars, drums, bass) | 0.369 | **0.665** |
-| Metal riffs: chugs, palm mutes, fast picking (synthetic, held out) | 0.614 | **0.798** |
+| Clean acoustic | **0.856** | 0.836 |
+| High-gain amp | 0.659 | **0.713** |
+| Separated guitar stem (with bleed) | 0.751 | **0.829** |
+| Full metal mix (2 guitars, drums, bass) | 0.384 | **0.660** |
+| Metal riffs: chugs, palm mutes, fast picking (synthetic, held out) | 0.593 | **0.811** |
+| Real electric takes with palm mutes, bends, slides (IDMT, held out, through an amp) | 0.508 | **0.743** |
 
-Stock Basic Pitch was trained on GuitarSet itself, so its clean-acoustic score is probably flattered; everywhere distortion is involved the fine-tuned model is far ahead.
+Stock Basic Pitch was trained on GuitarSet itself, so its clean-acoustic score is probably flattered; everywhere distortion is involved the fine-tuned model is far ahead. Both columns use automatic sensitivity calibrated for that model.
 
 **Tab accuracy**: right note, right time *and* the same string as the guitarist played (a harder bar: many notes can sensibly be played in two or three places). Both columns use the fret search fitted to real tabs; the right one adds the guitar model and its string head:
 
 | Condition | Stock Basic Pitch | TabForge |
 |---|---|---|
-| Clean acoustic | 0.555 | **0.627** |
-| High-gain amp | 0.326 | **0.395** |
-| Separated guitar stem | 0.438 | **0.528** |
-| Full metal mix | 0.178 | **0.343** |
-| Metal riffs (synthetic, held out) | 0.380 | **0.573** |
+| Clean acoustic | 0.532 | **0.604** |
+| High-gain amp | 0.311 | **0.412** |
+| Separated guitar stem | 0.439 | **0.527** |
+| Full metal mix | 0.186 | **0.350** |
+| Metal riffs (synthetic, held out) | 0.355 | **0.584** |
+| IDMT electric takes | 0.177 | **0.206** |
 
-On the real notes alone, the fitted fret search picks the guitarist's string 69.9% of the time (57.7% with the original hand-set costs).
+On the real notes alone, the fitted fret search picks the guitarist's string 69.9% of the time (57.7% with the original hand-set costs). The IDMT tab score is low for every method because much of that set is positional exercises (every fret of one string), not song-like playing; for the same reason the string head is trained without it.
 
 **What it means in practice**: on clean playing or a separated guitar stem, most notes are right and most land where a guitarist would play them; on a dense, distorted full mix, many notes are still missed or wrong. Use the local helper's stem separation, set the right tuning, and check by ear with the synced player: no automatic transcriber (this one included) is perfect yet.
 
@@ -147,10 +149,11 @@ To retrain the guitar model (needs an NVIDIA GPU; data stays outside the repo):
 
 ```bash
 python training/prepare_guitarset.py      # GuitarSet zips -> cache
+python training/prepare_idmt.py           # IDMT-SMT-Guitar zip -> cache
 python training/synth_riffs.py --n 3000   # synthetic metal riffs
 python training/train.py --help           # staged runs are listed in its docstring
 python training/string_head.py
-python training/evaluate.py --run guitar6 --name guitar6
+python training/evaluate.py --run guitar7 --name guitar7
 python training/export_onnx.py            # -> model-guitar/tabforge-guitar.onnx
 node training/eval_js.mjs fingering       # fit fret costs to the real tabs
 ```
@@ -158,7 +161,7 @@ node training/eval_js.mjs fingering       # fit fret costs to the real tabs
 ## Credits
 
 - Note transcription: [Basic Pitch](https://github.com/spotify/basic-pitch) by Spotify, Apache-2.0. `model/` is the original; `model-guitar/` is TabForge's fine-tuned derivative (Apache-2.0 terms apply to it).
-- Training data: [GuitarSet](https://zenodo.org/records/3371780) (Xi et al., ISMIR 2018), CC BY 4.0.
+- Training data: [GuitarSet](https://zenodo.org/records/3371780) (Xi et al., ISMIR 2018), CC BY 4.0, and [IDMT-SMT-Guitar](https://zenodo.org/records/7544110) (Kehling et al., Fraunhofer IDMT), CC BY-NC-ND 4.0. Because of the latter, the guitar model is for non-commercial use only; TabForge is free and non-commercial.
 - PyTorch port used for training: [basic-pitch-torch](https://github.com/gudgud96/basic-pitch-torch).
 - Stem separation: [Demucs](https://github.com/facebookresearch/demucs) by Meta AI, MIT.
 - Downloads: [yt-dlp](https://github.com/yt-dlp/yt-dlp), Unlicense.

@@ -4,9 +4,11 @@
 // The rule constants come from training/evaluate.py, fitted on GuitarSet
 // player 04 and reported on the untouched player 05.
 
+// floors keep sparse recordings (isolated notes, lots of silence) from getting
+// thresholds so low that noise turns into notes
 export const AUTO_RULES = {
-  general: { a: 0.75, b: 0.7 },
-  guitar: { a: 0.75, b: 0.55 },
+  general: { a: 0.85, b: 0.75, onsetFloor: 0.5, frameFloor: 0.25 },
+  guitar: { a: 0.75, b: 0.55, onsetFloor: 0.4, frameFloor: 0.25 },
 };
 
 // numpy-style percentile (linear interpolation)
@@ -29,6 +31,6 @@ export function activationStats({ onsets, frames }) {
 const clip = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 export function autoThresholds(stats, model = 'general') {
-  const { a, b } = AUTO_RULES[model] || AUTO_RULES.general;
-  return { onset: clip(a * stats.onsetP95, 0.2, 0.9), frame: clip(b * stats.noteP99, 0.15, 0.65) };
+  const { a, b, onsetFloor, frameFloor } = AUTO_RULES[model] || AUTO_RULES.general;
+  return { onset: clip(a * stats.onsetP95, onsetFloor, 0.9), frame: clip(b * stats.noteP99, frameFloor, 0.65) };
 }

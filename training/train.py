@@ -9,6 +9,7 @@ test set reported in the README. The shipped model was trained in stages:
   python train.py --run guitar4 --init guitar3 --steps 12000 --lr 1.5e-4 --p-synth 0.4
   python train.py --run guitar5 --init guitar4 --steps 8000  --lr 8e-5  --p-synth 0.35
   python train.py --run guitar6 --init guitar5 --steps 6000  --lr 8e-5  --p-synth 0.3 --p-palm 0.3
+  python train.py --run guitar7 --init guitar6 --steps 10000 --lr 8e-5  --p-synth 0.25 --p-idmt 0.3 --p-palm 0.2
 """
 
 import argparse
@@ -23,7 +24,7 @@ from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 from augment import condition, palm_mute, random_training_condition
 from common import (AUDIO_N_SAMPLES, FPS, HOP, N_FRAMES, SR, TEST_PLAYER, decode, device,
-                    load_audio, load_model, load_notes, note_f1, run_model, synth_ids, tracks)
+                    idmt_ids, load_audio, load_model, load_notes, note_f1, run_model, synth_ids, tracks)
 
 VAL_PLAYER = "04"
 
@@ -63,22 +64,26 @@ def targets(notes, t0, ratio=1.0, shift=0):
 
 
 class Windows(IterableDataset):
-    def __init__(self, ids, seed=0, synth=(), p_synth=0.0, p_palm=0.0):
+    def __init__(self, ids, seed=0, synth=(), p_synth=0.0, p_palm=0.0, idmt=(), p_idmt=0.0):
         self.ids = ids
         self.seed = seed
         self.synth = list(synth)
         self.p_synth = p_synth
         self.p_palm = p_palm
+        self.idmt = list(idmt)
+        self.p_idmt = p_idmt
 
     def __iter__(self):
         info = get_worker_info()
         rng = np.random.default_rng(self.seed + (info.id if info else 0) + int(time.time()))
         audio = {}
         while True:
-            synthetic = bool(self.synth) and rng.random() < self.p_synth
-            pool = self.synth if synthetic else self.ids
+            r = rng.random()
+            synthetic = bool(self.synth) and r < self.p_synth
+            real_di = bool(self.idmt) and self.p_synth <= r < self.p_synth + self.p_idmt  # IDMT electric DI
+            pool = self.synth if synthetic else self.idmt if real_di else self.ids
             t = pool[rng.integers(len(pool))]
-            src = "synth" if synthetic else "pickup" if rng.random() < 0.75 else "mic"
+            src = "synth" if synthetic else "idmt" if real_di else "pickup" if rng.random() < 0.75 else "mic"
             key = (t, src)
             if key not in audio:
                 if len(audio) > 400:
@@ -97,7 +102,7 @@ class Windows(IterableDataset):
             t0 = i0 / SR
             # notes in window time (after the pitch shift) drive the synthetic bass
             local = [((s - t0) / ratio, (e - t0) / ratio, m + shift, st) for s, e, m, st in notes]
-            if not synthetic and rng.random() < self.p_palm:
+            if not synthetic and not real_di and rng.random() < self.p_palm:
                 seg, local = palm_mute(seg, local, rng)
                 seg = seg.astype(np.float32)
                 # back to source time for the targets
@@ -112,7 +117,7 @@ def weighted_bce(pred, target, pos_weight):
     return loss.mean()
 
 
-def build_val(val_ids, n=20, synth_val=()):
+def build_val(val_ids, n=20, synth_val=(), idmt_val=()):
     """Fixed augmented validation audio: the conditions we care about most,
     on real GuitarSet takes and (if given) held-out synthetic metal riffs."""
     rng = np.random.default_rng(1234)
@@ -127,6 +132,10 @@ def build_val(val_ids, n=20, synth_val=()):
         notes = load_notes(t)
         kind = "highgain" if len(items) % 2 else "metalmix"
         items.append((t, "synth-" + kind, condition(x, notes, 0, rng, kind), notes))
+    for i, t in enumerate(idmt_val):
+        notes = load_notes(t)
+        kind = "highgain" if i % 2 else "stem"
+        items.append((t, "idmt-" + kind, condition(load_audio(t, "idmt"), notes, 0, rng, kind), notes))
     return items
 
 
@@ -137,7 +146,8 @@ def validate(model, items):
     groups = {}
     for t, _kind, y, notes in items:
         out = run_model(model, y)
-        g = groups.setdefault("synth" if t.startswith("synth_") else "real", {k: [] for k in grid})
+        group = "synth" if t.startswith("synth_") else "idmt" if t.startswith("idmt_") else "real"
+        g = groups.setdefault(group, {k: [] for k in grid})
         for k in grid:
             g[k].append(note_f1(decode(out, *k), notes)["f"])
     parts = {name: max(float(np.mean(s[k])) for k in grid) for name, s in groups.items()}
@@ -166,15 +176,17 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--p-synth", type=float, default=0.0, help="share of synthetic metal riffs in each batch")
     ap.add_argument("--p-palm", type=float, default=0.0, help="share of real takes turned into palm-muted playing")
+    ap.add_argument("--p-idmt", type=float, default=0.0, help="share of IDMT-SMT-Guitar electric DI takes")
     args = ap.parse_args()
     out = Path("C:/tftrain/runs") / args.run
     out.mkdir(parents=True, exist_ok=True)
 
     train_ids, val_ids = split_ids()
     synth_train, synth_val = (synth_ids("train"), synth_ids("val")) if args.p_synth > 0 else ([], [])
-    print(f"train tracks {len(train_ids)} (+{len(synth_train)} synthetic)  val tracks {len(val_ids)}  device {device()}")
+    idmt_train, idmt_val = (idmt_ids("train"), idmt_ids("val")) if args.p_idmt > 0 else ([], [])
+    print(f"train tracks {len(train_ids)} (+{len(synth_train)} synthetic, +{len(idmt_train)} IDMT)  val tracks {len(val_ids)}  device {device()}")
     model = load_model(f"C:/tftrain/runs/{args.init}/best.pth" if args.init else None)
-    val_items = build_val(val_ids, synth_val=synth_val)
+    val_items = build_val(val_ids, synth_val=synth_val, idmt_val=idmt_val)
     best_f, best_th = validate(model, val_items)
     print(f"pretrained  val F1 {best_f:.3f} @ {best_th}", flush=True)
     log = [{"step": 0, "val_f1": best_f, "thresholds": best_th}]
@@ -184,7 +196,8 @@ def main():
     freeze_bn(model)
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.05)
-    loader = DataLoader(Windows(train_ids, synth=synth_train, p_synth=args.p_synth, p_palm=args.p_palm), batch_size=args.batch,
+    loader = DataLoader(Windows(train_ids, synth=synth_train, p_synth=args.p_synth, p_palm=args.p_palm,
+                                idmt=idmt_train, p_idmt=args.p_idmt), batch_size=args.batch,
                         num_workers=args.workers, persistent_workers=True)
     step, t_start, running = 0, time.time(), []
     for audio, note, onset, contour in loader:

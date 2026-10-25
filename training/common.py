@@ -54,17 +54,34 @@ def tracks(split=None):
     return ids
 
 
+def _extra(track):
+    """Cache folder for non-GuitarSet sources (synthetic riffs, IDMT-SMT-Guitar)."""
+    for prefix, folder in (("synth_", "synth"), ("idmt_", "idmt")):
+        if track.startswith(prefix):
+            return CACHE / folder
+    return None
+
+
 def load_audio(track, source):
-    if track.startswith("synth_"):
-        return np.load(CACHE / "synth" / "audio" / f"{track}.npy").astype(np.float32)
+    extra = _extra(track)
+    if extra:
+        return np.load(extra / "audio" / f"{track}.npy").astype(np.float32)
     return np.load(CACHE / source / f"{track}.npy").astype(np.float32)
 
 
 def load_notes(track):
-    """[(start, end, midi_float, string)] from the GuitarSet / synthetic annotation."""
-    if track.startswith("synth_"):
-        return json.load(open(CACHE / "synth" / "labels" / f"{track}.json"))
+    """[(start, end, midi_float, string)] from the GuitarSet / synthetic / IDMT annotation."""
+    extra = _extra(track)
+    if extra:
+        return json.load(open(extra / "labels" / f"{track}.json"))
     return json.load(open(CACHE / "labels" / f"{track}.json"))
+
+
+def idmt_ids(split):
+    """IDMT-SMT-Guitar files (prepare_idmt.py): 10% validation, 10% test."""
+    ids = sorted(p.stem for p in (CACHE / "idmt" / "labels").glob("*.json"))
+    keep = {"val": lambda i: i % 10 == 0, "test": lambda i: i % 10 == 5}.get(split, lambda i: i % 10 not in (0, 5))
+    return [t for i, t in enumerate(ids) if keep(i)]
 
 
 def synth_ids(split):

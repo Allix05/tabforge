@@ -21,3 +21,10 @@ test('auto thresholds follow how strongly the network fires', () => {
   }
   assert.ok(AUTO_RULES.general && AUTO_RULES.guitar);
 });
+
+test('sparse recordings never get thresholds below the floor', () => {
+  const sparse = { onsets: Array.from({ length: 100 }, () => [0.01, 0]), frames: Array.from({ length: 100 }, () => [0.01, 0]) };
+  const t = autoThresholds(activationStats(sparse), 'guitar');
+  assert.equal(t.onset, AUTO_RULES.guitar.onsetFloor);
+  assert.equal(t.frame, AUTO_RULES.guitar.frameFloor);
+});

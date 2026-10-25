@@ -1,7 +1,7 @@
 """Export the guitar model (fine-tuned Basic Pitch + string head) to ONNX for
 onnxruntime-web, and check the ONNX output matches PyTorch.
 
-  python export_onnx.py --base guitar6            # -> ../model-guitar/tabforge-guitar.onnx
+  python export_onnx.py --base guitar7            # -> ../model-guitar/tabforge-guitar.onnx
 """
 
 import argparse
@@ -26,7 +26,7 @@ class Exported(torch.nn.Module):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="guitar6")
+    ap.add_argument("--base", default="guitar7")
     ap.add_argument("--head", default="C:/tftrain/runs/strings/head.pth")
     ap.add_argument("--out", default=str(REPO / "model-guitar" / "tabforge-guitar.onnx"))
     ap.add_argument("--untrained-head", action="store_true", help="export test without a trained head")

@@ -169,18 +169,18 @@
       <h2>How it works &amp; how accurate it is</h2>
       <ol>
         <li><strong>Stem separation (optional, local helper):</strong> <a href="https://github.com/facebookresearch/demucs">Demucs</a> <code>htdemucs_6s</code> splits the song into vocals, guitar, piano, bass, drums and other, so the guitar mode hears only guitar and the melody modes hear only the singer or the lead.</li>
-        <li><strong>Note transcription:</strong> in guitar mode, TabForge's own model: Spotify's <a href="https://github.com/spotify/basic-pitch">Basic Pitch</a> fine-tuned on <a href="https://guitarset.weebly.com/">GuitarSet</a>'s real tabs, plus high-gain amps, palm mutes and thousands of synthetic metal riffs, so it handles distortion and fast chugs. Melody modes use the original Basic Pitch, which is better on voice and keys. Both run in your browser.</li>
+        <li><strong>Note transcription:</strong> in guitar mode, TabForge's own model: Spotify's <a href="https://github.com/spotify/basic-pitch">Basic Pitch</a> fine-tuned on the real tabs of <a href="https://guitarset.weebly.com/">GuitarSet</a> and <a href="https://zenodo.org/records/7544110">IDMT-SMT-Guitar</a> (real palm mutes, bends, slides), plus high-gain amps and thousands of synthetic metal riffs, so it handles distortion and fast chugs. Melody modes use the original Basic Pitch, which is better on voice and keys. Both run in your browser.</li>
         <li><strong>Automatic sensitivity:</strong> the note thresholds are picked per song from how strongly the network reacts, using a rule calibrated on held-out recordings.</li>
         <li><strong>Music analysis:</strong> beats tracked with dynamic programming (drifting tempos are followed too), downbeats found, strummed chords grouped, notes snapped to a 16th-note grid, key and chords detected.</li>
         <li><strong>Melody modes:</strong> a Viterbi search picks the most prominent line frame by frame, preferring loud and high notes and smooth motion, then moves it by octaves into the sweet spot of the guitar.</li>
         <li><strong>Fingering:</strong> every chord gets its playable shapes (one note per string, at most a 4-fret stretch). A second Viterbi pass picks the sequence a guitarist would play: its costs were fitted to real tabs, and a string head in the model listens to the timbre to tell which string each note is on.</li>
       </ol>
-      <p class="muted">Measured on recordings the model never saw: about 83% of notes right on clean guitar or a separated guitar stem, 71% through a high-gain amp, 67% in a full metal mix (stock Basic Pitch: 37%). No automatic transcriber is perfect, so turn on stem separation, pick the right tuning, and check by ear with the synced player. If notes are missing, untick <em>Auto</em> and raise the sensitivity; use ½× / 2× if the bars look stretched.</p>
+      <p class="muted">Measured on recordings the model never saw: about 83% of notes right on clean guitar or a separated guitar stem, 71% through a high-gain amp, 66% in a full metal mix (stock Basic Pitch: 38%), 74% on real electric playing with palm mutes and bends (stock: 51%). No automatic transcriber is perfect, so turn on stem separation, pick the right tuning, and check by ear with the synced player. If notes are missing, untick <em>Auto</em> and raise the sensitivity; use ½× / 2× if the bars look stretched.</p>
     </section>
   </main>
 
   <footer>
-    TabForge &middot; by <a href="https://github.com/Allix05">Allix05</a> &middot; <a href="https://github.com/Allix05/tabforge">source</a> &middot; Basic Pitch &copy; Spotify AB (Apache-2.0), fine-tuned on GuitarSet (CC BY 4.0)
+    TabForge &middot; by <a href="https://github.com/Allix05">Allix05</a> &middot; <a href="https://github.com/Allix05/tabforge">source</a> &middot; Basic Pitch &copy; Spotify AB (Apache-2.0), fine-tuned on GuitarSet (CC BY 4.0) and IDMT-SMT-Guitar (CC BY-NC-ND 4.0, non-commercial use)
   </footer>
 </div>
 
